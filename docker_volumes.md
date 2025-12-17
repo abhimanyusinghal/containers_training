@@ -30,6 +30,18 @@ Some commands below are formatted to copy/paste cleanly; if something looks corr
 - Understand **bind mounts vs volumes**
 - Apply volumes correctly in real infrastructure scenarios
 
+### Intermediate Objectives (Optional)
+
+- Use `--mount` instead of `-v`
+- Manage volume lifecycle (dangling volumes, pruning, labels)
+- Backup and restore volumes
+- Troubleshoot common issues (mount overrides, permissions, "empty" volumes)
+- Design multi-container setups with separate volumes
+
+### Tip: Use a Name Prefix
+
+On shared hosts or busy workstations, prefix container/volume names (e.g. `lab-c1`, `lab-html`) so you don't clash with existing resources.
+
 ---
 
 ## Quick Sanity Check (Optional)
@@ -145,9 +157,9 @@ docker container run --rm -ti -v "$VOL2:/data" alpine sh -c 'ls -l /data && cat 
 
 Even though the container is gone, the **anonymous volume** created for `/data` can still exist and be re-attached.
 
-### Note (Important)
+### Note
 
-`VOLUME` declares a mount point. Each *new container* normally gets its *own* anonymous volume unless you explicitly mount an existing volume (or use a named volume).
+`VOLUME` declares a mount point. Each new container gets its own anonymous volume unless you explicitly mount an existing one.
 
 ---
 
@@ -324,6 +336,180 @@ Write down:
 - Which paths should be **volumes** (production)
 - Which paths should be **bind mounts** (development)
 - Which mounts should be **read-only**
+
+---
+
+## Optional Advanced Exercises (Intermediate)
+
+> **Context:** You're the on-call engineer for a small product team. The team runs a website (like Part 4) and is adding a database. Your job: make storage predictable, operable, and safe.
+
+---
+
+## Part 6 (Optional): Prefer `--mount`
+
+A teammate keeps mixing `-v` syntaxes and occasionally breaks mounts. You want a consistent standard.
+
+The `--mount` flag uses explicit key/value fields—easier to review and less error-prone than `-v`.
+
+Named volume:
+
+```bash
+docker container run --rm \
+  --mount type=volume,src=html,dst=/usr/share/nginx/html \
+  alpine sh -c 'ls -l /usr/share/nginx/html'
+```
+
+Bind mount:
+
+```bash
+docker container run --rm \
+  --mount type=bind,src=/tmp/binddemo,dst=/data \
+  alpine sh -c 'ls -l /data'
+```
+
+Read-only mount:
+
+```bash
+docker container run --rm \
+  --mount type=volume,src=shared,dst=/data,readonly \
+  alpine sh -c 'echo test > /data/should-fail.txt'
+```
+
+The mounts behave exactly like `-v`, but the intent is clearer—especially `readonly`.
+
+---
+
+## Part 7 (Optional): Volume Lifecycle, Labels, and Pruning
+
+After a few weeks, the host has dozens of old anonymous volumes. Nobody knows what's safe to delete.
+
+Add labels so you can identify ownership and clean up safely:
+
+```bash
+docker volume create --label purpose=training --label owner=$USER training-data
+docker volume inspect training-data
+```
+
+Find dangling volumes (usually anonymous volumes left behind):
+
+```bash
+docker volume ls -f dangling=true
+```
+
+Prune unused volumes (⚠ removes volumes not referenced by any container):
+
+```bash
+docker volume prune
+```
+
+You'll notice volumes created for short-lived containers often remain. Labels help you identify what's yours and what a job created.
+
+---
+
+## Part 8 (Optional): Backup, Restore, and Migration
+
+You need to upgrade a stateful service. Before you do, you want a backup you can restore quickly.
+
+Export a volume to a tarball:
+
+```bash
+docker volume create backup-src
+docker container run --rm -v backup-src:/data alpine sh -c 'echo hello > /data/hello.txt'
+
+docker container run --rm \
+  -v backup-src:/data:ro \
+  -v "$PWD":/backup \
+  alpine sh -c 'tar -czf /backup/backup-src.tgz -C /data .'
+```
+
+Restore into a new volume:
+
+```bash
+docker volume create backup-dst
+
+docker container run --rm \
+  -v backup-dst:/data \
+  -v "$PWD":/backup \
+  alpine sh -c 'tar -xzf /backup/backup-src.tgz -C /data'
+
+docker container run --rm -v backup-dst:/data alpine sh -c 'cat /data/hello.txt'
+```
+
+`backup-src.tgz` is your portable snapshot. `backup-dst` ends up with the same data. This is how you do volume migration and disaster recovery.
+
+---
+
+## Part 9 (Optional): "Why Is My Volume Empty?"
+
+You deploy a new `nginx` container and the default page is "gone".
+
+When you mount a volume onto a path, it **hides** whatever the image had at that path.
+
+```bash
+docker volume create hide-demo
+docker container run --rm nginx sh -c 'ls -l /usr/share/nginx/html | head'
+
+# This will likely look "empty" until you put content into the volume:
+docker container run --rm -v hide-demo:/usr/share/nginx/html nginx sh -c 'ls -l /usr/share/nginx/html'
+```
+
+Populate the volume (one-time “init” step):
+
+```bash
+docker container run --rm \
+  -v hide-demo:/usr/share/nginx/html \
+  nginx sh -c 'echo "<h1>Now it is not empty</h1>" > /usr/share/nginx/html/index.html'
+
+docker container run --rm -v hide-demo:/usr/share/nginx/html nginx sh -c 'ls -l /usr/share/nginx/html && head -n 5 /usr/share/nginx/html/index.html'
+```
+
+Once you write into the mounted path, the volume has content—and future containers mounting it will see it.
+
+---
+
+## Part 10 (Optional): Permissions and UID/GID
+
+Your app image runs as a non-root user. It suddenly can't write logs or data to the mounted volume.
+
+Many production images run as non-root. If your app can't write to a volume, it's usually a **permissions** issue.
+
+Create a volume and simulate a non-root writer:
+
+```bash
+docker volume create perms
+docker container run --rm -v perms:/data alpine sh -c 'adduser -D -u 10001 app && su app -c \"echo hi > /data/hi.txt\"'
+```
+
+If this fails in some environments, fix by setting ownership from a one-time init container:
+
+```bash
+docker container run --rm -v perms:/data alpine sh -c 'chown -R 10001:10001 /data'
+```
+
+After setting ownership, the non-root writer can create files reliably.
+
+---
+
+## Part 11 (Optional): Multi-Container Pattern
+
+The team is adding a database. You want a clean design:
+
+- Database files persist in a **data volume**
+- Backups go to a separate **backup volume**
+- You can inspect or restore without touching the app container
+
+```bash
+docker volume create pgdata
+docker volume create pgbackup
+```
+
+Design a setup that:
+
+- mounts `pgdata` into Postgres at `/var/lib/postgresql/data`
+- mounts `pgbackup` into a backup job container that dumps to `/backup`
+- (optional) mounts `pgdata` read-only into an admin container for inspection
+
+Test it: delete and recreate the app container. The database state should survive. Restore from backup and verify.
 
 ---
 
