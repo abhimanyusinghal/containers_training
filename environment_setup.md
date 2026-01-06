@@ -57,7 +57,7 @@ docker --version
 Open a terminal and clone the containers training repository:
 
 ```bash
-git clone https://github.com/abhimanyusinghal/containers_training.git
+sudo git clone https://github.com/abhimanyusinghal/containers_training.git
 ```
 
 Navigate to the cloned directory:
@@ -80,7 +80,7 @@ The repository includes a script that will:
 
 ```bash
 # Make the script executable
-chmod +x install_kind.sh
+sudo chmod +x install_kind.sh
 
 # Run the script with sudo
 sudo ./install_kind.sh
