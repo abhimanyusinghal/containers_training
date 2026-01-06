@@ -12,7 +12,9 @@ Before starting this lab, ensure:
 
 1. Your Ubuntu VM has Docker installed and running
 2. The KIND cluster has been created using the provided `install_kind.sh` script
-3. You have completed the kubectl commands lab (or are familiar with basic kubectl usage)
+3. **You have completed the kubectl Commands Lab** (this lab builds on those skills)
+
+> **Important**: This lab assumes familiarity with basic kubectl commands (`get`, `describe`, `logs`, `exec`, `delete`, `apply`). If you haven't completed the kubectl Commands Lab, do that first.
 
 ### Verify Your Cluster is Running
 
@@ -35,32 +37,22 @@ kind-cluster-control-plane   Ready    control-plane   10m   v1.29.0
 kind-cluster-worker          Ready    <none>          10m   v1.29.0
 ```
 
-### Create a Lab Directory
-
-```bash
-mkdir -p ~/pods-lab
-cd ~/pods-lab
-```
-
 ---
 
 ## Learning Objectives
 
 - Understand what a **Pod** is and why it's the basic unit in Kubernetes
 - Learn when to use **single-container** vs **multi-container** Pods
-- Create Pods using both **imperative** and **declarative** methods
-- Write and understand **Pod manifests** (YAML)
-- **Inspect**, **debug**, and **delete** Pods
 - Implement **health checks** (liveness, readiness, startup probes)
 - Configure **resource requests and limits**
-- Use **volumes** to persist data in Pods
+- Use **volumes** to persist and share data in Pods
+- Apply **multi-container patterns** (sidecar, ambassador)
 
 ### Intermediate Objectives (Optional)
 
-- Create **multi-container Pods** with shared volumes
 - Configure **advanced probe options**
-- Understand Pod **lifecycle** and **termination**
-- Work with different **volume types**
+- Understand **memory-backed volumes** for high-performance caching
+- Create **complete application Pods** combining all features
 
 ---
 
@@ -94,27 +86,23 @@ Ask yourself: **"Will these containers work correctly if they land on different 
 
 ---
 
-## Part 1: Creating Pods (Imperative Method)
+## Pod Manifest Structure
 
-The simplest way to create a Pod is using `kubectl run`.
+Before diving into Pod-specific features, understand the basic Pod manifest structure:
 
-### Create a Simple Pod
-
-```bash
-kubectl run my-nginx --image=nginx:alpine
-```
-
-### Check Pod Status
-
-```bash
-kubectl get pods
-```
-
-You might see:
-
-```
-NAME       READY   STATUS    RESTARTS   AGE
-my-nginx   1/1     Running   0          10s
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-name
+  labels:
+    key: value
+spec:
+  containers:
+  - name: container-name
+    image: image:tag
+    ports:
+    - containerPort: 80
 ```
 
 ### Common Pod Statuses
@@ -128,371 +116,20 @@ my-nginx   1/1     Running   0          10s
 | `CrashLoopBackOff` | Container keeps crashing and restarting |
 | `ImagePullBackOff` | Cannot pull the container image |
 
-### Get More Details
-
-```bash
-# Wide output with node and IP info
-kubectl get pods -o wide
-
-# Detailed information
-kubectl describe pod my-nginx
-```
-
-### Delete the Pod
-
-```bash
-kubectl delete pod my-nginx
-```
+> **Note**: Creating, inspecting, accessing, and deleting Pods using kubectl commands was covered in the **kubectl Commands Lab**. This lab focuses on Pod-specific configurations.
 
 ---
 
-## Part 2: Creating Pods (Declarative Method)
-
-The recommended approach is to define Pods in YAML manifests.
-
-### Understanding the Pod Manifest Structure
-
-A Pod manifest has these key sections:
-
-```yaml
-apiVersion: v1          # API version
-kind: Pod               # Resource type
-metadata:               # Pod metadata (name, labels, etc.)
-  name: pod-name
-spec:                   # Pod specification
-  containers:           # List of containers
-  - name: container-name
-    image: image:tag
-```
-
-### Create a Basic Pod Manifest
-
-```bash
-cat > basic-pod.yaml <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: basic-nginx
-  labels:
-    app: web
-    environment: lab
-spec:
-  containers:
-  - name: nginx
-    image: nginx:alpine
-    ports:
-    - containerPort: 80
-      name: http
-      protocol: TCP
-EOF
-```
-
-### Apply the Manifest
-
-```bash
-kubectl apply -f basic-pod.yaml
-```
-
-### Verify the Pod is Running
-
-```bash
-kubectl get pods basic-nginx
-kubectl get pods basic-nginx -o wide
-```
-
-### View the Full Pod Specification
-
-```bash
-kubectl get pod basic-nginx -o yaml
-```
-
-### Cleanup
-
-```bash
-kubectl delete -f basic-pod.yaml
-```
-
----
-
-## Part 3: Pod Details and Inspection
-
-### Create a Pod for Inspection
-
-```bash
-cat > inspect-pod.yaml <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: inspect-me
-  labels:
-    app: demo
-    version: "1.0"
-  annotations:
-    description: "A pod for learning inspection commands"
-    owner: "lab-user"
-spec:
-  containers:
-  - name: busybox
-    image: busybox:latest
-    command: ["sh", "-c", "echo 'Pod is running!' && sleep 3600"]
-EOF
-
-kubectl apply -f inspect-pod.yaml
-```
-
-### Basic Pod Information
-
-```bash
-kubectl get pod inspect-me
-```
-
-### Extended Information
-
-```bash
-kubectl get pod inspect-me -o wide
-```
-
-This shows:
-- Node where the Pod is running
-- Pod IP address
-- Nominated node (if any)
-- Readiness gates
-
-### Detailed Description
-
-```bash
-kubectl describe pod inspect-me
-```
-
-Key sections in the output:
-
-| Section | Information |
-|---------|-------------|
-| **Name/Namespace** | Pod identity |
-| **Node** | Where the Pod is running |
-| **Start Time** | When the Pod started |
-| **Labels/Annotations** | Metadata attached to the Pod |
-| **Status** | Current Pod phase |
-| **IP** | Pod's cluster IP address |
-| **Containers** | Container details (image, state, ports) |
-| **Conditions** | Pod conditions (Initialized, Ready, etc.) |
-| **Events** | Recent events related to this Pod |
-
-### Get Specific Fields with JSONPath
-
-```bash
-# Get Pod IP
-kubectl get pod inspect-me -o jsonpath='{.status.podIP}'
-
-# Get container image
-kubectl get pod inspect-me -o jsonpath='{.spec.containers[0].image}'
-
-# Get node name
-kubectl get pod inspect-me -o jsonpath='{.spec.nodeName}'
-
-# Get Pod phase
-kubectl get pod inspect-me -o jsonpath='{.status.phase}'
-```
-
-### View Pod Events Only
-
-```bash
-kubectl get events --field-selector involvedObject.name=inspect-me
-```
-
----
-
-## Part 4: Accessing Pods
-
-### View Container Logs
-
-```bash
-kubectl logs inspect-me
-```
-
-Output:
-
-```
-Pod is running!
-```
-
-### Stream Logs in Real-Time
-
-First, create a Pod that generates continuous logs:
-
-```bash
-cat > logging-pod.yaml <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: logger
-spec:
-  containers:
-  - name: logger
-    image: busybox:latest
-    command: ["sh", "-c", "while true; do echo \"[$(date)] Hello from logger pod\"; sleep 5; done"]
-EOF
-
-kubectl apply -f logging-pod.yaml
-```
-
-Wait for it to start, then stream logs:
-
-```bash
-kubectl logs logger -f
-```
-
-Press `Ctrl+C` to stop streaming.
-
-### View Previous Container Logs
-
-If a container restarts, view logs from the previous instance:
-
-```bash
-kubectl logs logger --previous
-```
-
-(This will show an error if the container hasn't restarted)
-
-### Execute Commands in a Container
-
-```bash
-# Run a single command
-kubectl exec inspect-me -- hostname
-
-# Run multiple commands
-kubectl exec inspect-me -- sh -c "echo 'Hello' && whoami && pwd"
-
-# Get an interactive shell
-kubectl exec -it inspect-me -- sh
-```
-
-Inside the shell:
-
-```sh
-# Check environment variables
-env
-
-# Check network configuration
-ip addr
-cat /etc/resolv.conf
-
-# Check filesystem
-ls -la /
-
-# Exit the shell
-exit
-```
-
-### Copy Files To/From Pods
-
-Copy a file from the Pod:
-
-```bash
-kubectl exec inspect-me -- sh -c "echo 'Data from pod' > /tmp/data.txt"
-kubectl cp inspect-me:/tmp/data.txt ./data-from-pod.txt
-cat ./data-from-pod.txt
-```
-
-Copy a file to the Pod:
-
-```bash
-echo "Data from host" > ./data-from-host.txt
-kubectl cp ./data-from-host.txt inspect-me:/tmp/data-from-host.txt
-kubectl exec inspect-me -- cat /tmp/data-from-host.txt
-```
-
-### Port Forwarding
-
-Create an nginx Pod and forward its port:
-
-```bash
-cat > web-pod.yaml <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: web-server
-spec:
-  containers:
-  - name: nginx
-    image: nginx:alpine
-    ports:
-    - containerPort: 80
-EOF
-
-kubectl apply -f web-pod.yaml
-kubectl wait --for=condition=Ready pod/web-server
-```
-
-Forward local port 8080 to Pod port 80:
-
-```bash
-kubectl port-forward web-server 8080:80 &
-```
-
-Test the connection:
-
-```bash
-curl localhost:8080
-```
-
-Stop port forwarding:
-
-```bash
-pkill -f "port-forward web-server"
-```
-
----
-
-## Part 5: Deleting Pods
-
-### Delete by Name
-
-```bash
-kubectl delete pod web-server
-```
-
-### Delete Using Manifest File
-
-```bash
-kubectl delete -f logging-pod.yaml
-```
-
-### Delete Multiple Pods
-
-```bash
-kubectl delete pods inspect-me logger --ignore-not-found
-```
-
-### Delete All Pods in Namespace
-
-```bash
-# Be careful with this command!
-kubectl delete pods --all
-```
-
-### Understanding Pod Termination
-
-When you delete a Pod:
-
-1. Pod enters `Terminating` state
-2. Kubernetes sends **SIGTERM** to containers
-3. Containers have a **grace period** (default 30 seconds) to shut down
-4. If containers don't stop, Kubernetes sends **SIGKILL**
-
-### Force Delete (Immediate)
-
-```bash
-kubectl delete pod <pod-name> --grace-period=0 --force
-```
-
-**Warning**: Use this only when necessary, as it doesn't allow graceful shutdown.
-
----
-
-## Part 6: Health Checks (Probes)
+## Part 1: Health Checks (Probes)
 
 Health checks ensure your application is running correctly. Kubernetes supports three types of probes.
+
+### Create a Lab Directory
+
+```bash
+mkdir -p ~/pods-lab
+cd ~/pods-lab
+```
 
 ### Types of Probes
 
@@ -675,7 +312,7 @@ kubectl delete pods liveness-demo readiness-demo startup-demo failing-liveness
 
 ---
 
-## Part 7: Resource Management
+## Part 2: Resource Management
 
 Kubernetes allows you to specify resource **requests** (minimum) and **limits** (maximum) for containers.
 
@@ -812,7 +449,7 @@ kubectl delete pods resource-request-demo resource-limit-demo memory-stress
 
 ---
 
-## Part 8: Volumes in Pods
+## Part 3: Volumes in Pods
 
 Volumes allow data to persist beyond container restarts and enable data sharing between containers.
 
@@ -969,7 +606,7 @@ kubectl delete pods emptydir-demo hostpath-demo memory-backed
 
 ---
 
-## Part 9: Multi-Container Pod Patterns
+## Part 4: Multi-Container Pod Patterns
 
 ### Sidecar Pattern
 
@@ -1078,47 +715,9 @@ kubectl delete pods sidecar-demo ambassador-demo
 
 ## Exercises
 
-### Exercise 1: Basic Pod Creation
+> **Note**: These exercises focus on Pod-specific features. Basic kubectl commands (creating pods, debugging, port-forwarding) were covered in the **kubectl Commands Lab**. These exercises build on that foundation.
 
-Create a Pod running Redis:
-
-```bash
-# Create the manifest
-cat > redis-pod.yaml <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: my-redis
-  labels:
-    app: cache
-    tier: backend
-spec:
-  containers:
-  - name: redis
-    image: redis:alpine
-    ports:
-    - containerPort: 6379
-EOF
-
-# Apply it
-kubectl apply -f redis-pod.yaml
-
-# Verify it's running
-kubectl get pod my-redis -o wide
-
-# Test Redis connectivity
-kubectl exec -it my-redis -- redis-cli ping
-```
-
-Expected output: `PONG`
-
-Cleanup:
-
-```bash
-kubectl delete -f redis-pod.yaml
-```
-
-### Exercise 2: Health Checks Implementation
+### Exercise 1: Health Checks Implementation
 
 Create a web server with complete health check configuration:
 
@@ -1175,7 +774,7 @@ Cleanup:
 kubectl delete -f healthy-web.yaml
 ```
 
-### Exercise 3: Resource Management
+### Exercise 2: Resource Management
 
 Create a Pod with resource constraints and verify them:
 
@@ -1207,7 +806,7 @@ Verify resource configuration:
 kubectl describe pod constrained-app | grep -A 6 "Limits\|Requests"
 ```
 
-Check actual usage:
+Check actual usage (requires metrics-server from kubectl Commands Lab):
 
 ```bash
 kubectl top pod constrained-app
@@ -1219,7 +818,7 @@ Cleanup:
 kubectl delete -f constrained-pod.yaml
 ```
 
-### Exercise 4: Data Sharing Between Containers
+### Exercise 3: Data Sharing Between Containers
 
 Create a Pod where one container writes data and another reads it:
 
@@ -1275,69 +874,14 @@ kubectl delete -f data-sharing.yaml
 
 ## Optional Advanced Exercises
 
-### Exercise 5: Debugging a Failing Pod
+### Exercise 4: Complete Application Pod
 
-Create a Pod with an intentional error:
-
-```bash
-cat > broken-pod.yaml <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: broken-app
-spec:
-  containers:
-  - name: app
-    image: nginx:nonexistent-tag
-EOF
-
-kubectl apply -f broken-pod.yaml
-```
-
-Debug the issue:
-
-```bash
-# Check status
-kubectl get pod broken-app
-
-# Describe for details
-kubectl describe pod broken-app
-
-# Check events
-kubectl get events --field-selector involvedObject.name=broken-app
-```
-
-You should see `ImagePullBackOff` or `ErrImagePull` errors.
-
-Fix the Pod:
-
-```bash
-kubectl delete pod broken-app
-
-cat > broken-pod.yaml <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: broken-app
-spec:
-  containers:
-  - name: app
-    image: nginx:alpine
-EOF
-
-kubectl apply -f broken-pod.yaml
-kubectl get pod broken-app
-```
-
-Cleanup:
-
-```bash
-kubectl delete -f broken-pod.yaml
-```
-
-### Exercise 6: Complete Application Pod
-
-Create a Pod with all features combined:
+Create a Pod combining all features learned in this lab:
+- Labels and annotations
+- Multi-container (sidecar pattern)
+- Shared volumes
+- Resource requests and limits
+- Health probes
 
 ```bash
 cat > complete-app.yaml <<'EOF'
@@ -1514,13 +1058,11 @@ spec:
 ```bash
 # Delete all pods created in this lab
 kubectl delete pods \
-  my-nginx basic-nginx inspect-me logger web-server \
   liveness-demo readiness-demo startup-demo failing-liveness \
   resource-request-demo resource-limit-demo memory-stress \
   emptydir-demo hostpath-demo memory-backed \
   sidecar-demo ambassador-demo \
-  my-redis healthy-web constrained-app data-sharing \
-  broken-app complete-app \
+  healthy-web constrained-app data-sharing complete-app \
   2>/dev/null || true
 
 # Remove lab directory
