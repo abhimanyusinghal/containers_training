@@ -1050,10 +1050,16 @@ kind: ConfigMap
 metadata:
   name: nginx-custom
 data:
+  # Must be a complete server block (files in conf.d are included in http context)
   custom.conf: |
-    # Custom location block
-    location /custom {
-        return 200 'Custom endpoint';
+    server {
+        listen 8080;
+        server_name custom.local;
+        
+        location / {
+            return 200 'Custom server on port 8080\n';
+            add_header Content-Type text/plain;
+        }
     }
 ---
 apiVersion: v1
@@ -1078,9 +1084,11 @@ EOF
 kubectl apply -f subpath-demo.yaml
 kubectl wait --for=condition=Ready pod/subpath-demo --timeout=60s
 
-# Verify other files in conf.d still exist
+# Verify other files in conf.d still exist (default.conf should still be there)
 kubectl exec subpath-demo -- ls -la /etc/nginx/conf.d/
 ```
+
+> **Note**: Files in `/etc/nginx/conf.d/` must contain complete `server` blocks because they're included in the `http` context. A standalone `location` block would cause nginx to fail.
 
 ### Cleanup Part 9
 
