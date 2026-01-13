@@ -427,12 +427,13 @@ kubectl apply -f ~/service-mesh-lab/reviews-canary.yaml
 echo "Making 10 requests..."
 for i in {1..10}; do
   response=$(curl -s "http://$INGRESS_HOST:$INGRESS_PORT/productpage")
-  if echo "$response" | grep -q "glyphicon-star"; then
-    if echo "$response" | grep -q "color:black"; then
-      echo "Request $i: v2 (black stars)"
-    elif echo "$response" | grep -q "color:red"; then
-      echo "Request $i: v3 (red stars)"
-    fi
+  
+  if echo "$response" | grep -q 'font color="red"'; then
+    echo "Request $i: v3 (red stars)"
+  elif echo "$response" | grep -q 'font color="black"'; then
+    echo "Request $i: v2 (black stars)"
+  elif echo "$response" | grep -q 'glyphicon-star'; then
+    echo "Request $i: v2/v3 (stars found)"
   else
     echo "Request $i: v1 (no stars)"
   fi
@@ -492,7 +493,7 @@ kubectl apply -f ~/service-mesh-lab/reviews-v3-full.yaml
 
 # Verify all traffic goes to v3
 for i in {1..5}; do
-  curl -s "http://$INGRESS_HOST:$INGRESS_PORT/productpage" | grep -q "color:red" && echo "Request $i: v3 (red stars)" || echo "Request $i: other"
+  curl -s "http://$INGRESS_HOST:$INGRESS_PORT/productpage" | grep -q 'font color="red"' && echo "Request $i: v3 (red stars)" || echo "Request $i: other"
   sleep 1
 done
 ```
@@ -1194,7 +1195,7 @@ v1_count=0
 v3_count=0
 for i in {1..20}; do
   response=$(curl -s "http://$INGRESS_HOST:$INGRESS_PORT/productpage")
-  if echo "$response" | grep -q "color:red"; then
+  if echo "$response" | grep -q 'font color="red"'; then
     ((v3_count++))
     echo "Request $i: v3 (red stars)"
   else
@@ -1256,7 +1257,7 @@ echo "Migration complete: 100% v3"
 
 # Verify
 for i in {1..5}; do
-  curl -s "http://$INGRESS_HOST:$INGRESS_PORT/productpage" | grep -q "color:red" && \
+  curl -s "http://$INGRESS_HOST:$INGRESS_PORT/productpage" | grep -q 'font color="red"' && \
     echo "Request $i: v3 ✓" || echo "Request $i: unexpected"
 done
 ```
